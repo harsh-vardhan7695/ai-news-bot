@@ -147,12 +147,12 @@ def fetch_huggingface():
             link  = item.find("link")
             desc  = item.find("description")
 
-            if title is not None:
+            if title is not None and title.text:
                 items.append({
                     "source":  "HuggingFace",
                     "emoji":   "🤗",
-                    "title":   title.text.strip() if title.text else "Untitled",
-                    "summary": truncate(re.sub(r"<[^>]+>", "", desc.text or ""), 150),
+                    "title":   title.text.strip(),
+                    "summary": truncate(re.sub(r"<[^>]+>", "", (desc.text or "") if desc is not None else ""), 150),
                     "url":     link.text.strip() if link is not None and link.text else "",
                 })
 
@@ -222,13 +222,23 @@ def fetch_reddit():
     subreddits = ["MachineLearning", "artificial", "LocalLLaMA"]
 
     for sub in subreddits:
-        url  = f"https://www.reddit.com/r/{sub}/hot.json?limit={MAX_ITEMS_PER_SOURCE}"
-        data = fetch_json(url)
+        # Reddit requires a proper browser-like User-Agent or it returns 403
+        url = f"https://www.reddit.com/r/{sub}/hot.json?limit={MAX_ITEMS_PER_SOURCE}"
+        try:
+            req = urllib.request.Request(url, headers={
+                "User-Agent": "Mozilla/5.0 (compatible; AI-News-Bot/1.0)"
+            })
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                raw = resp.read().decode("utf-8", errors="replace")
+            data = json.loads(raw)
+        except Exception as e:
+            print(f"  [WARN] Reddit r/{sub} failed: {e}")
+            continue
 
         if not data or "data" not in data:
             continue
 
-        for post in data["data"].get("children", [])[:MAX_ITEMS_PER_SOURCE]:
+        for post in data["data"].get("children", [])[:MAX_ITEMS_PER_SOURCE]:  # type: ignore[union-attr]
             pdata     = post.get("data", {})
             title     = pdata.get("title", "")
             permalink = pdata.get("permalink", "")
